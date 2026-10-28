@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit').rateLimit;
 const multer = require('multer');
+const {NeonStorage,validate,atomic}=require('./neon-storage');
 const app = express();
 app.disable('x-powered-by'); app.set('trust proxy',1);
 const production=process.env.NODE_ENV==='production';
@@ -16,7 +17,8 @@ if(!/^\/[a-zA-Z0-9_-]{8,100}$/.test(adminPath)) throw new Error('ADMIN_PATH must
 if(['/api','/healthz','/public','/admin-assets'].includes(adminPath)) throw new Error('Reserved ADMIN_PATH');
 const password=process.env.ADMIN_PASSWORD || '';
 const secret=process.env.SESSION_SECRET || '';
-if(password.length<16 || secret.length<48) throw new Error('Set ADMIN_PASSWORD (at least 16 characters) and SESSION_SECRET (at least 48 characters). See the private generated environment file.');
+if(password.length<16 || secret.length<48) throw new Error('Set ADMIN_PASSWORD (at least 16 characters) and SESSION_SECRET (at least 48 characters). Set these in Render environment settings or backend/.env.');
+if(production && (/^replace-with-|^local-test-only/.test(password)||/^replace-with-|^local-test-only/.test(secret)))throw new Error('Replace example ADMIN_PASSWORD and SESSION_SECRET before production use.');
 const adminUser=process.env.ADMIN_USER || 'admin';
 const passwordSalt=crypto.randomBytes(32);
 const passwordHash=crypto.scryptSync(password,passwordSalt,64);
@@ -24,26 +26,41 @@ const seedDir=path.join(__dirname,'seed');
 const dataDir=path.resolve(process.env.DATA_DIR || path.join(__dirname,'data'));
 try { fs.mkdirSync(dataDir,{recursive:true}); fs.accessSync(dataDir,fs.constants.W_OK); }
 catch(e) { throw new Error('DATA_DIR is not writable. Mount a Render persistent disk at /var/data and set DATA_DIR=/var/data, or use ./data locally. '+e.message); }
-if(production && !process.env.DATA_DIR) throw new Error('Production requires an explicit persistent DATA_DIR. Use the supplied Render Blueprint or configure durable storage.');
+if(production && !process.env.DATA_DIR && !process.env.DATABASE_URL) throw new Error('Production requires an explicit persistent DATA_DIR. Use the supplied Render Blueprint or configure durable storage.');
 for(const folder of ['papers','logos'])fs.mkdirSync(path.join(dataDir,folder),{recursive:true});
 const subjects=JSON.parse(fs.readFileSync(path.join(seedDir,'catalog.json'),'utf8'));
 const databaseFile=path.join(dataDir,'database.json');
-let db;
+async function main(){
+let db=null,localError=null;
 if(fs.existsSync(databaseFile)){
-  try {db=JSON.parse(fs.readFileSync(databaseFile,'utf8')); if(!Array.isArray(db.exams)||!db.settings)throw new Error('Invalid database shape');}
-  catch(e){throw new Error('Cannot read database.json. Restore a valid backup; existing data was NOT overwritten. '+e.message);}
-}else{
-  db={version:1,settings:{brandName:'Kneck Official',instructions:'Click Browse exams. Choose a subject, select its paper, then click Download PDF. The marking guidance is included after the questions.',logo:null},exams:JSON.parse(fs.readFileSync(path.join(seedDir,'exams.json'),'utf8')).map(e=>({...e,source:'seed'}))};
+  try {db=validate(JSON.parse(fs.readFileSync(databaseFile,'utf8')));}
+  catch(e){localError=e;}
 }
-function persist(){const temp=databaseFile+'.tmp';fs.writeFileSync(temp,JSON.stringify(db,null,2),{mode:0o600});fs.renameSync(temp,databaseFile);}
+const storage=new NeonStorage({connectionString:process.env.DATABASE_URL,dataDir,namespace:process.env.NEON_BACKUP_NAMESPACE||'knec-library'});
+try { db=await storage.bootstrap(db); }
+catch(e){
+  if(!db)throw new Error('Neon startup recovery unavailable. Existing data was not overwritten. Check DATABASE_URL and database access.');
+  storage.fail('Startup connection unavailable. Valid local data retained; scheduled retries will continue.');
+}
+if(!db){
+  if(localError)throw new Error('Invalid database.json and no Neon backup found. Restore your backup; existing file was not overwritten.');
+  db={version:1,settings:{brandName:'Knec Official',instructions:'Click Browse exams. Choose a subject, select its paper, then click Download PDF. The marking guidance is included after the questions.',logo:null},exams:JSON.parse(fs.readFileSync(path.join(seedDir,'exams.json'),'utf8')).map(e=>({...e,source:'seed'}))};
+}
+// Migrate only the exact original default name; do not change custom admin branding.
+if(db.settings.brandName==='Kneck Official')db.settings.brandName='Knec Official';
+function persist(){atomic(databaseFile,JSON.stringify(validate(db),null,2));}
 persist();
+try {await storage.recover(()=>db);await storage.backup(()=>db);}
+catch(e){storage.fail('Initial synchronization incomplete. Local data retained; check storage status in admin.');}
+storage.start(()=>db);
 const sessions=new Map();
 const allowedOrigins=(process.env.FRONTEND_ORIGINS||'http://localhost:4173,http://127.0.0.1:4173').split(',').map(s=>s.trim()).filter(Boolean);
 app.use(helmet({crossOriginResourcePolicy:{policy:'cross-origin'},contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'"],imgSrc:["'self'",'data:','blob:'],connectSrc:["'self'"],objectSrc:["'none'"],frameAncestors:["'none'"],upgradeInsecureRequests:production?[]:null}}}));
 app.use(express.json({limit:'32kb'}));
-app.get('/healthz',(req,res)=>res.json({ok:true,service:'kneck-official-api',version:'1.0.0'}));
+app.use('/api',async(req,res,next)=>{try{if(!req.path.startsWith('/admin/storage')&&!req.path.startsWith('/admin/login')&&!req.path.startsWith('/admin/me'))await storage.recover(()=>db);next();}catch{res.status(503).json({error:'Storage recovery incomplete. Check the backend logs and Neon backup status.'});}});
+app.get('/healthz',(req,res)=>res.json({ok:true,service:'knec-official-api',version:'1.0.0'}));
 app.use('/api',rateLimit({windowMs:15*60*1000,limit:1000,standardHeaders:'draft-8',legacyHeaders:false}));
-const publicCors=cors({origin(origin,cb){if(!origin||allowedOrigins.includes(origin))return cb(null,true);const error=new Error('Origin is not in FRONTEND_ORIGINS.');error.status=403;cb(error);},methods:['GET','HEAD','OPTIONS'],credentials:false});
+const publicCors=cors({origin(origin,cb){if(!origin||origin==='null'||allowedOrigins.includes(origin))return cb(null,true);const error=new Error('Origin is not in FRONTEND_ORIGINS.');error.status=403;cb(error);},methods:['GET','HEAD','OPTIONS'],credentials:false});
 app.use(['/api/catalog','/api/settings','/api/exams','/api/downloads','/api/logo'],publicCors);
 function publicExam(e){const {filename,source,...view}=e;return {...view,bytes:fs.statSync(examFile(e)).size};}
 function examFile(e){return path.join(e.source==='seed'?path.join(seedDir,'papers'):path.join(dataDir,'papers'),path.basename(e.filename));}
@@ -97,6 +114,8 @@ app.post('/api/admin/login',rateLimit({windowMs:15*60*1000,limit:8,standardHeade
 app.use('/api/admin',(req,res,next)=>{const session=readSession(req);if(!session)return res.status(401).json({error:'Please sign in to the admin panel.'});req.session=session;if(!['GET','HEAD','OPTIONS'].includes(req.method)&&req.get('x-csrf-token')!==session.csrf)return res.status(403).json({error:'Security token missing or expired. Refresh and sign in again.'});next();});
 app.get('/api/admin/me',(req,res)=>res.json({username:adminUser,csrf:req.session.csrf}));
 app.post('/api/admin/logout',(req,res)=>{sessions.delete(req.session.jti);res.clearCookie('kneck_session',{path:'/api/admin',httpOnly:true,secure:production,sameSite:'strict'});res.json({ok:true});});
+app.get('/api/admin/storage',(req,res)=>res.json(storage.status));
+app.post('/api/admin/storage/backup',async(req,res)=>{if(!storage.status.enabled)return res.status(409).json({error:'Set DATABASE_URL on the backend to enable Neon backups.'});try{await storage.init();await storage.backup(()=>db);res.json(storage.status);}catch{res.status(503).json({error:'Neon backup failed. Local data was not replaced. Check DATABASE_URL and backend logs.'});}});
 app.get('/api/admin/dashboard',(req,res)=>res.json({subjects,settings:db.settings,exams:db.exams.map(publicExam),stats:{papers:db.exams.length,published:db.exams.filter(e=>e.published).length,downloads:db.exams.reduce((n,e)=>n+(e.downloads||0),0)}}));
 app.put('/api/admin/settings',(req,res)=>{
   const {brandName,instructions}=req.body;
@@ -111,20 +130,24 @@ app.post('/api/admin/exams',upload.single('file'),(req,res)=>{
   if(typeof title!=='string'||!title.trim()||title.length>120||!Number.isInteger(year)||year<2000||year>2100)return res.status(400).json({error:'Title required (up to 120 characters); year must be 2000–2100.'});
   if(!req.file||req.file.buffer.subarray(0,5).toString()!=='%PDF-')return res.status(400).json({error:'Upload a valid PDF file, up to 20 MB.'});
   const id=crypto.randomUUID();const filename=id+'.pdf';fs.writeFileSync(path.join(dataDir,'papers',filename),req.file.buffer,{mode:0o600});
-  const exam={id,subjectId,paper,title:title.trim(),year,kind:'Uploaded revision',filename,source:'upload',published:req.body.published!=='false',createdAt:new Date().toISOString(),downloads:0};
+  const exam={id,subjectId,paper,title:title.trim(),year,kind:'Uploaded revision',filename,source:'upload',fileHash:crypto.createHash('sha256').update(req.file.buffer).digest('hex'),published:req.body.published!=='false',createdAt:new Date().toISOString(),downloads:0};
   db.exams.unshift(exam);persist();res.status(201).json({exam:publicExam(exam)});
 });
 app.patch('/api/admin/exams/:id',(req,res)=>{const exam=db.exams.find(e=>e.id===req.params.id);if(!exam)return res.sendStatus(404);if(typeof req.body.published!=='boolean')return res.status(400).json({error:'published must be true or false.'});exam.published=req.body.published;persist();res.json({ok:true});});
 app.delete('/api/admin/exams/:id',(req,res)=>{const exam=db.exams.find(e=>e.id===req.params.id);if(!exam)return res.sendStatus(404);db.exams=db.exams.filter(e=>e.id!==exam.id);persist();if(exam.source==='upload')fs.rmSync(examFile(exam),{force:true});res.json({ok:true});});
 function imageExtension(b){if(b.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))return'png';if(b[0]===255&&b[1]===216&&b[2]===255)return'jpg';if(['GIF87a','GIF89a'].includes(b.subarray(0,6).toString()))return'gif';if(b.subarray(0,4).toString()==='RIFF'&&b.subarray(8,12).toString()==='WEBP')return'webp';return null;}
-app.post('/api/admin/logo',upload.single('file'),(req,res)=>{if(!req.file||req.file.size>8*1024*1024)return res.status(400).json({error:'Use a PNG, JPG, GIF or WebP image up to 8 MB.'});const ext=imageExtension(req.file.buffer);if(!ext)return res.status(400).json({error:'Unsupported image. Use PNG, JPG, GIF or WebP. SVG is disabled for security.'});const filename=crypto.randomUUID()+'.'+ext;const old=db.settings.logo;fs.writeFileSync(path.join(dataDir,'logos',filename),req.file.buffer);db.settings.logo=filename;persist();if(old)fs.rmSync(path.join(dataDir,'logos',path.basename(old)),{force:true});res.json({ok:true});});
-app.delete('/api/admin/logo',(req,res)=>{const old=db.settings.logo;db.settings.logo=null;persist();if(old)fs.rmSync(path.join(dataDir,'logos',path.basename(old)),{force:true});res.json({ok:true});});
-app.get('/api/admin/backup',(req,res)=>{res.set('Content-Disposition','attachment; filename="kneck-metadata-backup.json"');res.json({...db,backupNotice:'Metadata only. Back up the complete DATA_DIR for uploaded PDF and logo bytes. Seed PDFs remain in the repository.'});});
+app.post('/api/admin/logo',upload.single('file'),(req,res)=>{if(!req.file||req.file.size>8*1024*1024)return res.status(400).json({error:'Use a PNG, JPG, GIF or WebP image up to 8 MB.'});const ext=imageExtension(req.file.buffer);if(!ext)return res.status(400).json({error:'Unsupported image. Use PNG, JPG, GIF or WebP. SVG is disabled for security.'});const filename=crypto.randomUUID()+'.'+ext;const old=db.settings.logo;fs.writeFileSync(path.join(dataDir,'logos',filename),req.file.buffer);db.settings.logo=filename;db.settings.logoHash=crypto.createHash('sha256').update(req.file.buffer).digest('hex');persist();if(old)fs.rmSync(path.join(dataDir,'logos',path.basename(old)),{force:true});res.json({ok:true});});
+app.delete('/api/admin/logo',(req,res)=>{const old=db.settings.logo;db.settings.logo=null;delete db.settings.logoHash;persist();if(old)fs.rmSync(path.join(dataDir,'logos',path.basename(old)),{force:true});res.json({ok:true});});
+app.get('/api/admin/backup',(req,res)=>{res.set('Content-Disposition','attachment; filename="knec-metadata-backup.json"');res.json({...db,backupNotice:'Metadata only. Back up the complete DATA_DIR for uploaded PDF and logo bytes. Seed PDFs remain in the repository.'});});
 // Admin HTML is physically in public/, but is served ONLY at the environment-selected path.
 app.get(adminPath,(req,res)=>{res.set('Cache-Control','no-store');res.sendFile(path.join(__dirname,'public','admin.html'));});
 app.use('/admin-assets',express.static(path.join(__dirname,'public','assets'),{dotfiles:'deny',index:false}));
 app.use((req,res)=>res.status(404).json({error:'Not found.'}));
 app.use((err,req,res,next)=>{console.error(err.message);if(res.headersSent)return next(err);const status=err instanceof multer.MulterError?400:err.status||500;res.status(status).json({error:status===500?'The server could not complete the request. Check server logs.':err.message});});
 const port=Number(process.env.PORT||3001);
-const server=app.listen(port,'0.0.0.0',()=>console.log(`Kneck API listening on ${port}. Storage writable. ${db.exams.length} papers loaded.`));
-process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
+const server=app.listen(port,'0.0.0.0',()=>console.log(`Knec API listening on ${port}. Storage writable. ${db.exams.length} papers loaded.`));
+let stopping=false;
+async function stop(){if(stopping)return;stopping=true;const drained=new Promise(resolve=>server.close(resolve));const timeout=setTimeout(()=>process.exit(1),25000);timeout.unref();try{await drained;await storage.close(()=>db);clearTimeout(timeout);process.exit(0);}catch{console.error('Final Neon backup failed; local data retained.');process.exit(1);}}
+process.on('SIGTERM',stop);process.on('SIGINT',stop);
+}
+main().catch(e=>{console.error('Startup failed:',e.message);process.exit(1);});
