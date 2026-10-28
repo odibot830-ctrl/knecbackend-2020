@@ -1,0 +1,22 @@
+{
+  "name": "kneck-official-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Independent KCSE revision library API",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22.16.0 <23"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "cors": "^2.8.5",
+    "express-rate-limit": "^8.1.0",
+    "multer": "^2.0.2",
+    "dotenv": "^17.2.3"
+  }
+}

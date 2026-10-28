@@ -1,0 +1,302 @@
+[
+  {
+    "id": "mathematics",
+    "name": "Mathematics",
+    "code": "121",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Written"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Written"
+      }
+    ]
+  },
+  {
+    "id": "chemistry",
+    "name": "Chemistry",
+    "code": "233",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Written"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Written"
+      },
+      {
+        "number": 3,
+        "label": "Paper 3",
+        "component": "Practical"
+      }
+    ]
+  },
+  {
+    "id": "biology",
+    "name": "Biology",
+    "code": "231",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Written"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Written"
+      },
+      {
+        "number": 3,
+        "label": "Paper 3",
+        "component": "Practical"
+      }
+    ]
+  },
+  {
+    "id": "cre",
+    "name": "Christian Religious Education",
+    "code": "313",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Written"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Written"
+      }
+    ]
+  },
+  {
+    "id": "kiswahili",
+    "name": "Kiswahili",
+    "code": "102",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Insha"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Lugha"
+      },
+      {
+        "number": 3,
+        "label": "Paper 3",
+        "component": "Fasihi"
+      }
+    ]
+  },
+  {
+    "id": "geography",
+    "name": "Geography",
+    "code": "312",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Physical geography"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Human geography"
+      }
+    ]
+  },
+  {
+    "id": "computer-studies",
+    "name": "Computer Studies",
+    "code": "451",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Theory"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Practical"
+      },
+      {
+        "number": 3,
+        "label": "Paper 3",
+        "component": "Project"
+      }
+    ]
+  },
+  {
+    "id": "history",
+    "name": "History & Government",
+    "code": "311",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Kenya"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "World history"
+      }
+    ]
+  },
+  {
+    "id": "german",
+    "name": "German",
+    "code": "502",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Listening & composition"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Grammar & reading"
+      },
+      {
+        "number": 3,
+        "label": "Paper 3",
+        "component": "Oral"
+      }
+    ]
+  },
+  {
+    "id": "french",
+    "name": "French",
+    "code": "501",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Listening, dictation & writing"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Reading, grammar & functional writing"
+      },
+      {
+        "number": 3,
+        "label": "Paper 3",
+        "component": "Oral"
+      }
+    ]
+  },
+  {
+    "id": "english",
+    "name": "English",
+    "code": "101",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Functional skills"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Comprehension & grammar"
+      },
+      {
+        "number": 3,
+        "label": "Paper 3",
+        "component": "Composition & literature"
+      }
+    ]
+  },
+  {
+    "id": "business-studies",
+    "name": "Business Studies",
+    "code": "565",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Written"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Written"
+      }
+    ]
+  },
+  {
+    "id": "agriculture",
+    "name": "Agriculture",
+    "code": "443",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Written"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Written"
+      },
+      {
+        "number": 3,
+        "label": "Paper 3",
+        "component": "Project"
+      }
+    ]
+  },
+  {
+    "id": "woodwork",
+    "name": "Woodwork",
+    "code": "444",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Theory"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Project"
+      }
+    ]
+  },
+  {
+    "id": "home-science",
+    "name": "Home Science",
+    "code": "441",
+    "papers": [
+      {
+        "number": 1,
+        "label": "Paper 1",
+        "component": "Theory"
+      },
+      {
+        "number": 2,
+        "label": "Paper 2",
+        "component": "Clothing practical"
+      },
+      {
+        "number": 3,
+        "label": "Paper 3",
+        "component": "Foods practical"
+      }
+    ]
+  }
+]
